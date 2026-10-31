@@ -77,7 +77,7 @@ uv run wifi_flasher.py flash app.elf --target "Target A"
 uv run wifi_flasher.py flash app.bin --config stm32g4x.cfg --pins 41,42 --base 0x08004000
 uv run wifi_flasher.py select --target "Target B"
 uv run wifi_flasher.py wifi MyNetwork --host 192.168.1.50
-uv run wifi_flasher.py flash-board --port COM5 --image firmware/merged-binary.bin
+uv run wifi_flasher.py flash-board --port COM5 --image firmware/openocd-on-esp32-n8r8.bin
 uv run wifi_flasher.py forget-wifi --port COM5
 uv run wifi_flasher.py address --port COM5
 ```
