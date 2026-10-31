@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.10"
+
+      - name: Collect the installed files
+        run: |
+          $payload = "installer\payload"
+          New-Item -ItemType Directory -Force "$payload\firmware" | Out-Null
+          Copy-Item wireless_flasher.py, ui.html, start.bat, README.md $payload
+          Copy-Item firmware\*.bin "$payload\firmware"
+          Copy-Item (Get-Command uv).Source $payload
+
+      - name: Build the MSI
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          $version = $env:GITHUB_REF_NAME.TrimStart("v")
+          wix build installer\WirelessFlasher.wxs -arch x64 -d Version=$version -o dist\WirelessFlasher.msi
+
+      - name: Install and start the app
+        run: |
+          $install = Start-Process msiexec -Wait -PassThru -ArgumentList "/i dist\WirelessFlasher.msi /qn /l*v msi.log"
+          if ($install.ExitCode -ne 0) {
+            Get-Content msi.log -Tail 40
+            exit 1
+          }
+          $app = "$env:LOCALAPPDATA\Programs\Wireless Flasher"
+          foreach ($file in "start.bat", "uv.exe", "firmware\openocd-on-esp32-n8r8.bin") {
+            if (-not (Test-Path "$app\$file")) { throw "$file was not installed" }
+          }
+          $shortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "Wireless Flasher.lnk"
+          if (-not (Test-Path $shortcut)) { throw "The Start menu shortcut is missing" }
+
+          $server = Start-Process "$app\start.bat" -ArgumentList "--no-browser --port 18765" -PassThru
+          $page = $null
+          foreach ($attempt in 1..60) {
+            Start-Sleep -Seconds 3
+            try {
+              $page = Invoke-WebRequest http://127.0.0.1:18765/ -UseBasicParsing -TimeoutSec 3
+              break
+            } catch {}
+          }
+          taskkill /PID $server.Id /T /F | Out-Null
+          if (-not $page -or $page.Content -notmatch "Wireless Flasher") { throw "The app did not start" }
+
+          $remove = Start-Process msiexec -Wait -PassThru -ArgumentList "/x dist\WirelessFlasher.msi /qn"
+          if ($remove.ExitCode -ne 0) { throw "Uninstall failed" }
+          if (Test-Path "$app\start.bat") { throw "Uninstall left files behind" }
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME dist\WirelessFlasher.msi firmware\openocd-on-esp32-n8r8.bin `
+            --title "Wireless Flasher $env:GITHUB_REF_NAME" --generate-notes

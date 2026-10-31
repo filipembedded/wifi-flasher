@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- Per-user, so installing needs no administrator rights. -->
+  <Package Name="Wireless Flasher"
+           Manufacturer="Filip Stojanovic"
+           Version="$(var.Version)"
+           UpgradeCode="78FAFB8D-69B6-443C-AA03-AE557A9393C8"
+           Scope="perUser">
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Wireless Flasher is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Wireless Flasher" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <Files Directory="INSTALLFOLDER" Include="payload\**" />
+      <Component Directory="INSTALLFOLDER">
+        <Shortcut Directory="ProgramMenuFolder"
+                  Name="Wireless Flasher"
+                  Target="[INSTALLFOLDER]start.bat"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Directory="DesktopFolder"
+                  Name="Wireless Flasher"
+                  Target="[INSTALLFOLDER]start.bat"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Wireless Flasher"
+                       Name="Installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

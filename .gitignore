@@ -1,3 +1,4 @@
 __pycache__/
-firmware/
 *.lock
+dist/
+installer/payload/
