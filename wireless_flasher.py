@@ -37,7 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
-SETTINGS_PATH = Path.home() / ".wifi-flasher.json"
+SETTINGS_PATH = Path.home() / ".wireless-flasher.json"
 FLASH_BASE = 0x08000000
 AP_HOST = "192.168.4.1"
 RPC_PORT = 6666
@@ -778,10 +778,10 @@ def run_gui(port, open_browser):
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     actual_port = server.server_address[1]
     Handler.allowed_hosts = (f"127.0.0.1:{actual_port}", f"localhost:{actual_port}")
-    with tempfile.TemporaryDirectory(prefix="wifi-flasher-") as upload_dir:
+    with tempfile.TemporaryDirectory(prefix="wireless-flasher-") as upload_dir:
         Handler.upload_dir = upload_dir
         url = f"http://127.0.0.1:{actual_port}/"
-        print(f"WiFi Flasher is running at {url}\nClose this window to quit.", flush=True)
+        print(f"Wireless Flasher is running at {url}\nClose this window to quit.", flush=True)
         if open_browser:
             webbrowser.open(url)
         try:

@@ -1,4 +1,4 @@
-# WiFi Flasher
+# Wireless Flasher
 
 Flash STM32 chips over Wi-Fi through an ESP32-S3 running the
 [`wifi-debugger` branch of openocd-on-esp32](https://github.com/filipembedded/openocd-on-esp32).
@@ -68,22 +68,22 @@ It verifies the flash contents with a CRC and starts the firmware.
 
 ## Terminal use
 
-Every feature is also a command, run with `uv run wifi_flasher.py`:
+Every feature is also a command, run with `uv run wireless_flasher.py`:
 
 ```
-uv run wifi_flasher.py scan
-uv run wifi_flasher.py status --host 192.168.1.50
-uv run wifi_flasher.py flash app.elf --target "Target A"
-uv run wifi_flasher.py flash app.bin --config stm32g4x.cfg --pins 41,42 --base 0x08004000
-uv run wifi_flasher.py select --target "Target B"
-uv run wifi_flasher.py wifi MyNetwork --host 192.168.1.50
-uv run wifi_flasher.py flash-board --port COM5 --image firmware/openocd-on-esp32-n8r8.bin
-uv run wifi_flasher.py forget-wifi --port COM5
-uv run wifi_flasher.py address --port COM5
+uv run wireless_flasher.py scan
+uv run wireless_flasher.py status --host 192.168.1.50
+uv run wireless_flasher.py flash app.elf --target "Target A"
+uv run wireless_flasher.py flash app.bin --config stm32g4x.cfg --pins 41,42 --base 0x08004000
+uv run wireless_flasher.py select --target "Target B"
+uv run wireless_flasher.py wifi MyNetwork --host 192.168.1.50
+uv run wireless_flasher.py flash-board --port COM5 --image firmware/openocd-on-esp32-n8r8.bin
+uv run wireless_flasher.py forget-wifi --port COM5
+uv run wireless_flasher.py address --port COM5
 ```
 
 Use `--no-browser` to start the GUI without opening a browser. Settings are saved in
-`.wifi-flasher.json` in your home folder.
+`.wireless-flasher.json` in your home folder.
 
 ## Debugging
 
