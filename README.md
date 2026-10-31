@@ -22,11 +22,16 @@ You only do this once for each ESP32-S3-DevKitC-1 N8R8 board.
 1. Connect the board's **UART** USB port. On Windows you may need the
    [CP210x driver](https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers).
 2. Open **Board setup**, select the USB port and click **Write firmware to board**.
+   When it finishes, the app shows the board's address.
 3. Join the **esp-openocd** Wi-Fi network, which has no password.
 4. Enter your network and click **Save Wi-Fi network**. It must be a 2.4 GHz network.
-5. Rejoin your own network. On the **Flash** page, click **Find board**.
+   While USB is connected, the app shows the board's new address and fills it in for you.
+5. Rejoin your own network.
 
 The firmware image is `firmware/` in this folder, or you can click **Choose image**.
+
+To see the address later, connect USB and click **Show board address**, or click
+**Find board** on the **Flash** page.
 
 ## Wire a target
 
@@ -74,6 +79,7 @@ uv run wifi_flasher.py select --target "Target B"
 uv run wifi_flasher.py wifi MyNetwork --host 192.168.1.50
 uv run wifi_flasher.py flash-board --port COM5 --image firmware/merged-binary.bin
 uv run wifi_flasher.py forget-wifi --port COM5
+uv run wifi_flasher.py address --port COM5
 ```
 
 Use `--no-browser` to start the GUI without opening a browser. Settings are saved in

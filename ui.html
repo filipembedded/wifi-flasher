@@ -127,9 +127,12 @@
       <button id="wifi" class="primary big">Save Wi-Fi network</button>
     </section>
     <section>
-      <h2>Recovery</h2>
-      <p class="hint">Clears the saved network and target settings over USB. The firmware stays.</p>
-      <button id="forget" class="danger" style="margin-top:10px">Clear saved network</button>
+      <h2>USB tools</h2>
+      <p class="hint">Show board address restarts the board and reads its address. Clear saved network removes the saved network and target settings, but keeps the firmware.</p>
+      <div class="row" style="margin-top:10px">
+        <button id="address">Show board address</button>
+        <button id="forget" class="danger">Clear saved network</button>
+      </div>
     </section>
   </div>
 
@@ -281,7 +284,8 @@ async function run(action) {
 function showJob(job) {
   $("stage").textContent = job.error || job.stage;
   $("stage").className = job.error ? "bad" : job.running ? "" : "good";
-  $("bar").value = job.percent;
+  if (job.running && job.percent < 0) $("bar").removeAttribute("value");
+  else $("bar").value = Math.max(job.percent, 0);
   $("log").replaceChildren(...job.log.map(line => {
     const item = document.createElement("li");
     item.textContent = line;
@@ -299,7 +303,16 @@ async function watchJob() {
   }
   polling = false;
   setBusy(false);
+  await useReportedAddress();
   refreshStatus().catch(() => {});
+}
+
+async function useReportedAddress() {
+  const {result} = await api("/api/job");
+  if (!result?.address) return;
+  $("host").value = result.address;
+  $("wifi-host").value = result.address;
+  await saveQuietly();
 }
 
 function setBusy(busy) {
@@ -404,6 +417,11 @@ $("wifi").onclick = async () => {
     await post("/api/wifi", {host: $("wifi-host").value.trim(), ssid: $("ssid").value,
                              password: $("password").value});
     $("password").value = "";
+    if ($("port").value) {
+      run(() => api(`/api/board/address?restart=0&port=${encodeURIComponent($("port").value)}`,
+        {method: "POST"}));
+      return;
+    }
     $("progress-box").hidden = false;
     $("stage").className = "good";
     $("stage").textContent = "Saved. The board is restarting. Rejoin your network, then use Find board.";
@@ -411,6 +429,8 @@ $("wifi").onclick = async () => {
     fail(error.message);
   }
 };
+$("address").onclick = () => run(() =>
+  api(`/api/board/address?port=${encodeURIComponent($("port").value)}`, {method: "POST"}));
 $("forget").onclick = () => {
   if (!confirm("Clear the saved Wi-Fi network and target settings on this board?")) return;
   run(() => api(`/api/board/forget-wifi?port=${encodeURIComponent($("port").value)}`, {method: "POST"}));

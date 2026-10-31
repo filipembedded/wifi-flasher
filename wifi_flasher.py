@@ -46,6 +46,8 @@ NVS_OFFSET, NVS_SIZE = 0x9000, 0x6000
 # GPIOs on the N8R8 DevKitC-1 that are free of flash, PSRAM, USB, UART and straps.
 FREE_GPIOS = {1, 2, *range(4, 19), 21, 38, 39, 40, 41, 42, 47, 48}
 NON_TARGET_CONFIGS = re.compile(r"^(esp|xtensa-core-)|^swj-dp\.tcl$|^stm32x5x_common\.cfg$")
+ADDRESS_LINE = re.compile(rb"\bIP\s*:\s*(\d+\.\d+\.\d+\.\d+)")
+UNKNOWN_PROGRESS = -1
 DEFAULT_SETTINGS = {
     "host": "",
     "selected": 0,
@@ -548,24 +550,18 @@ def list_ports():
     ]
 
 
-def run_esptool(port, arguments, report):
+def run_esptool(port, arguments):
     command = [sys.executable, "-m", "esptool", "--chip", "esp32s3", "--port", port]
-    process = subprocess.Popen(
+    result = subprocess.run(
         command + arguments,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         errors="replace",
     )
-    output = []
-    for line in process.stdout:
-        line = line.strip()
-        output.append(line)
-        if match := re.search(r"\((\d+) ?%\)", line):
-            report(None, int(match[1]))
-    if process.wait():
-        tail = " ".join(line for line in output[-4:] if line)
-        raise FlasherError(f"esptool failed: {tail}")
+    if result.returncode:
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        raise FlasherError(f"esptool failed: {' '.join(lines[-3:])}")
 
 
 def default_image():
@@ -573,16 +569,56 @@ def default_image():
     return images[0] if images else None
 
 
+def read_board_address(port, report, restart=True, timeout=90):
+    """Return the address the board prints on its USB serial port while it starts."""
+    import serial
+
+    link = serial.Serial()
+    link.port, link.baudrate, link.timeout = port, 115200, 0.2
+    link.dtr = link.rts = False
+    try:
+        link.open()
+    except serial.SerialException as err:
+        raise FlasherError(f"Cannot open {port}. Close any serial monitor using it.") from err
+    with link:
+        report("Waiting for the board to connect", 90)
+        if restart:
+            link.rts = True
+            time.sleep(0.15)
+            link.rts = False
+        deadline = time.monotonic() + timeout
+        output = b""
+        while time.monotonic() < deadline:
+            output = output[-200:] + link.read(4096)
+            if match := ADDRESS_LINE.search(output):
+                return match[1].decode()
+    raise FlasherError(
+        "The board did not report an address. Check that it is an N8R8 module, "
+        "and look for the esp-openocd Wi-Fi network."
+    )
+
+
+def report_address(address, report):
+    network = " on the esp-openocd Wi-Fi network" if address == AP_HOST else ""
+    report(f"Board address: {address}{network}", 100)
+    return {"address": address}
+
+
+def show_board_address(port, report, restart=True):
+    return report_address(read_board_address(port, report, restart), report)
+
+
 def flash_board(port, image, report):
-    report("Writing the debugger firmware", 0)
-    run_esptool(port, ["--baud", "460800", "write-flash", "0x0", str(image)], report)
-    report("Done. Connect to the esp-openocd Wi-Fi network", 100)
+    # esptool hides its progress when its output is not a terminal
+    report("Writing the debugger firmware, about one minute", UNKNOWN_PROGRESS)
+    run_esptool(port, ["--baud", "460800", "write-flash", "0x0", str(image)])
+    return show_board_address(port, report)
 
 
 def forget_wifi(port, report):
-    report("Clearing the saved network", 20)
-    run_esptool(port, ["erase-region", hex(NVS_OFFSET), hex(NVS_SIZE)], report)
-    report("Done. The board now starts the esp-openocd network", 100)
+    report("Clearing the saved network", UNKNOWN_PROGRESS)
+    run_esptool(port, ["erase-region", hex(NVS_OFFSET), hex(NVS_SIZE)])
+    return show_board_address(port, report)
 
 
 # GUI: a local page served only to this computer
@@ -591,14 +627,15 @@ def forget_wifi(port, report):
 class Job:
     def __init__(self):
         self.lock = threading.Lock()
-        self.state = {"running": False, "stage": "", "percent": 0, "error": None, "log": []}
+        self.state = {"running": False, "stage": "", "percent": 0, "error": None,
+                      "log": [], "result": None}
 
     def start(self, work):
         with self.lock:
             if self.state["running"]:
                 raise FlasherError("Another operation is still running.")
             self.state = {"running": True, "stage": "Starting", "percent": 0,
-                          "error": None, "log": []}
+                          "error": None, "log": [], "result": None}
         threading.Thread(target=self._run, args=(work,), daemon=True).start()
 
     def report(self, stage, percent):
@@ -609,15 +646,15 @@ class Job:
             self.state["percent"] = percent
 
     def _run(self, work):
-        error = None
+        error = result = None
         try:
-            work(self.report)
+            result = work(self.report)
         except FlasherError as err:
             error = str(err)
         except Exception as err:  # keep the GUI usable after an unexpected failure
             error = f"Unexpected error: {err}"
         with self.lock:
-            self.state.update(running=False, error=error)
+            self.state.update(running=False, error=error, result=result)
             if error:
                 self.state["log"].append(error)
 
@@ -728,6 +765,9 @@ class Handler(BaseHTTPRequestHandler):
             self.job.start(lambda r: flash_board(query["port"], image, r))
         elif route == "/api/board/forget-wifi":
             self.job.start(lambda r: forget_wifi(query["port"], r))
+        elif route == "/api/board/address":
+            restart = query.get("restart") != "0"
+            self.job.start(lambda r: show_board_address(query["port"], r, restart))
         else:
             raise FlasherError("Unknown request.")
         return {"ok": True}
@@ -755,7 +795,7 @@ def run_gui(port, open_browser):
 
 def print_progress(stage, percent):
     if stage:
-        print(f"[{percent:3d}%] {stage}", flush=True)
+        print(stage if percent == UNKNOWN_PROGRESS else f"[{percent:3d}%] {stage}", flush=True)
 
 
 def resolve_host(args):
@@ -827,6 +867,11 @@ def command_forget_wifi(args):
     return 0
 
 
+def command_address(args):
+    show_board_address(args.port, print_progress)
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=0, help="local GUI port")
@@ -867,6 +912,9 @@ def build_parser():
     sub = commands.add_parser("forget-wifi", help="erase saved settings over USB")
     sub.add_argument("--port", required=True, dest="port")
     sub.set_defaults(run=command_forget_wifi)
+    sub = commands.add_parser("address", help="show the board's address over USB")
+    sub.add_argument("--port", required=True, dest="port")
+    sub.set_defaults(run=command_address)
     return parser
 
 
