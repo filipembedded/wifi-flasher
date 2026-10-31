@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiFi Flasher</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1c2128; --muted: #5b6573; --line: #d8dde4;
+    --accent: #1f6feb; --accent-text: #ffffff; --good: #1a7f4b; --warn: #a15c00; --bad: #c62f3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b; --panel: #1d2127; --text: #e8ebef; --muted: #9aa4b1; --line: #333a43;
+      --accent: #4a8fff; --accent-text: #07121f; --good: #46c384; --warn: #e0a64a; --bad: #f0707b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           margin-bottom: 14px; }
+  h1 { font-size: 21px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.good { background: var(--good); } .dot.warn { background: var(--warn); }
+  .dot.bad { background: var(--bad); }
+  nav { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+  nav button { background: none; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+               border-radius: 0; padding: 8px 12px; font-weight: 600; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px; margin-bottom: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+  .row > label { flex: 1 1 130px; }
+  label { display: block; font-size: 13px; color: var(--muted); }
+  input, select { width: 100%; margin-top: 3px; padding: 8px 9px; font: inherit; color: var(--text);
+                  background: var(--bg); border: 1px solid var(--line); border-radius: 7px; }
+  button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 7px; cursor: pointer;
+           color: var(--text); background: var(--bg); border: 1px solid var(--line); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.big { width: 100%; padding: 12px; font-size: 16px; margin-top: 12px; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .target { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-bottom: 9px; }
+  .target.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .target .head { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 9px; }
+  .target .head input[type=radio] { width: auto; margin: 0; }
+  .target .head .name { flex: 1 1 200px; width: auto; margin: 0; font-weight: 600; }
+  .icon { padding: 4px 9px; font-size: 13px; }
+  #drop { display: block; text-align: center; color: var(--muted); padding: 22px 12px; cursor: pointer;
+          border: 2px dashed var(--line); border-radius: 9px; }
+  #drop.over, #drop.has-file { border-color: var(--accent); color: var(--text); }
+  #file, #board-file { display: none; }
+  .hint { font-size: 13px; color: var(--muted); margin: 7px 0 0; }
+  progress { width: 100%; height: 10px; margin-top: 8px; accent-color: var(--accent); }
+  #stage { font-weight: 600; }
+  #stage.bad { color: var(--bad); } #stage.good { color: var(--good); }
+  #log { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted);
+         max-height: 150px; overflow: auto; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>WiFi Flasher</h1>
+    <span class="pill"><span id="dot" class="dot"></span><span id="status">Not connected</span></span>
+  </header>
+  <nav>
+    <button id="tab-flash" class="active">Flash</button>
+    <button id="tab-setup">Board setup</button>
+  </nav>
+
+  <div id="page-flash">
+    <section>
+      <h2>Debugger board</h2>
+      <div class="row">
+        <label>IP address<input id="host" placeholder="Click Find board" autocomplete="off"></label>
+        <button id="find">Find board</button>
+        <button id="refresh">Refresh</button>
+      </div>
+    </section>
+    <section>
+      <h2>Target</h2>
+      <div id="targets"></div>
+      <button id="add">Add target</button>
+    </section>
+    <section>
+      <h2>Firmware</h2>
+      <label id="drop" for="file">Drop an .elf, .hex or .bin file here, or click to browse</label>
+      <input id="file" type="file" accept=".elf,.axf,.out,.hex,.bin">
+      <div class="row" id="base-row" hidden style="margin-top:10px">
+        <label>Load address for .bin<input id="base" value="0x08000000"></label>
+      </div>
+      <button id="flash" class="primary big" disabled>Flash</button>
+    </section>
+  </div>
+
+  <div id="page-setup" hidden>
+    <section>
+      <h2>1. Write the debugger firmware</h2>
+      <p class="hint">Connect the board's UART USB port. This erases the board, including its saved Wi-Fi network.</p>
+      <div class="row" style="margin-top:10px">
+        <label>USB port<select id="port"></select></label>
+        <button id="ports">Refresh ports</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label>Firmware image<input id="board-name" readonly></label>
+        <button id="board-browse">Choose image</button>
+      </div>
+      <input id="board-file" type="file" accept=".bin">
+      <button id="board-flash" class="primary big">Write firmware to board</button>
+    </section>
+    <section>
+      <h2>2. Connect the board to Wi-Fi</h2>
+      <p class="hint">A new board starts its own network, <b>esp-openocd</b>, with no password. It does the same when it cannot reach its saved network. Join that network, then save yours here. Use a 2.4 GHz network.</p>
+      <div class="row" style="margin-top:10px">
+        <label>Board address<input id="wifi-host" value="192.168.4.1"></label>
+        <label>Network name<input id="ssid" autocomplete="off"></label>
+        <label>Password<input id="password" type="password" autocomplete="off"></label>
+      </div>
+      <button id="wifi" class="primary big">Save Wi-Fi network</button>
+    </section>
+    <section>
+      <h2>Recovery</h2>
+      <p class="hint">Clears the saved network and target settings over USB. The firmware stays.</p>
+      <button id="forget" class="danger" style="margin-top:10px">Clear saved network</button>
+    </section>
+  </div>
+
+  <section id="progress-box" hidden>
+    <div id="stage"></div>
+    <progress id="bar" max="100" value="0"></progress>
+    <ul id="log"></ul>
+  </section>
+</main>
+<template id="target-template">
+  <div class="target">
+    <div class="head">
+      <input type="radio" name="target" aria-label="Use this target">
+      <input class="name" aria-label="Target name">
+      <button class="icon select">Switch to this target</button>
+      <button class="icon remove">Remove</button>
+    </div>
+    <div class="row">
+      <label>MCU family<select class="cfg"></select></label>
+      <label>SWCLK GPIO<select class="swclk"></select></label>
+      <label>SWDIO GPIO<select class="swdio"></select></label>
+    </div>
+  </div>
+</template>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = id => document.getElementById(id);
+let settings, pins = [], configs = [], firmware = null, boardImage = null, polling = false;
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {...options,
+    headers: {"X-Token": TOKEN, ...(options.headers || {})}});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+const post = (path, body) => api(path, {method: "POST", body: JSON.stringify(body ?? {})});
+
+function fail(message) {
+  $("progress-box").hidden = false;
+  $("stage").textContent = message;
+  $("stage").className = "bad";
+}
+
+function fillSelect(select, values, current, label = value => value) {
+  const options = values.includes(current) ? values : [...values, current];
+  select.replaceChildren(...options.map(value => new Option(label(value), value)));
+  select.value = current;
+}
+
+const familyName = cfg => cfg.replace(/\.cfg$/, "").toUpperCase();
+
+function collect() {
+  settings.host = $("host").value.trim();
+  settings.targets = [...document.querySelectorAll(".target")].map(card => ({
+    name: card.querySelector(".name").value.trim() || "Target",
+    cfg: card.querySelector(".cfg").value,
+    swclk: Number(card.querySelector(".swclk").value),
+    swdio: Number(card.querySelector(".swdio").value),
+  }));
+  return settings;
+}
+
+async function save() {
+  await post("/api/settings", collect());
+}
+
+function renderTargets() {
+  const list = $("targets");
+  list.replaceChildren();
+  const template = $("target-template");
+  settings.targets.forEach((target, index) => {
+    const card = template.content.firstElementChild.cloneNode(true);
+    const radio = card.querySelector("[type=radio]");
+    radio.checked = index === settings.selected;
+    card.classList.toggle("selected", radio.checked);
+    radio.onchange = () => { settings.selected = index; saveQuietly(); renderTargets(); };
+    card.querySelector(".name").value = target.name;
+    fillSelect(card.querySelector(".cfg"), configs, target.cfg, familyName);
+    fillSelect(card.querySelector(".swclk"), pins.map(String), String(target.swclk));
+    fillSelect(card.querySelector(".swdio"), pins.map(String), String(target.swdio));
+    card.querySelectorAll("input.name, select").forEach(field => field.onchange = saveQuietly);
+    card.querySelector(".select").onclick = () => run(async () => {
+      await save();
+      await post(`/api/select?target=${index}`);
+    });
+    const remove = card.querySelector(".remove");
+    remove.disabled = settings.targets.length === 1;
+    remove.onclick = () => {
+      collect();
+      settings.targets.splice(index, 1);
+      settings.selected = Math.min(settings.selected, settings.targets.length - 1);
+      renderTargets();
+      saveQuietly();
+    };
+    list.append(card);
+  });
+}
+
+async function saveQuietly() {
+  try {
+    await save();
+  } catch (error) {
+    fail(error.message);
+  }
+}
+
+async function refreshStatus() {
+  const host = $("host").value.trim();
+  const dot = $("dot"), text = $("status");
+  if (!host) {
+    dot.className = "dot";
+    text.textContent = "Not connected";
+    return;
+  }
+  const status = await post("/api/status", {host});
+  if (!status.online) {
+    dot.className = "dot bad";
+    text.textContent = `Board not found at ${host}`;
+  } else if (status.examined) {
+    dot.className = "dot good";
+    text.textContent = `Ready: ${familyName(status.config)}, GPIO ${status.pins?.join("/") ?? "default"}`;
+  } else {
+    dot.className = "dot warn";
+    text.textContent = "Board found, target not responding";
+  }
+  if (status.online && status.configs.join() !== configs.join()) {
+    collect();
+    configs = status.configs;
+    renderTargets();
+  }
+}
+
+async function run(action) {
+  setBusy(true);
+  $("stage").className = "";
+  $("log").replaceChildren();
+  $("bar").value = 0;
+  $("progress-box").hidden = false;
+  try {
+    await action();
+    await watchJob();
+  } catch (error) {
+    fail(error.message);
+    setBusy(false);
+  }
+}
+
+function showJob(job) {
+  $("stage").textContent = job.error || job.stage;
+  $("stage").className = job.error ? "bad" : job.running ? "" : "good";
+  $("bar").value = job.percent;
+  $("log").replaceChildren(...job.log.map(line => {
+    const item = document.createElement("li");
+    item.textContent = line;
+    return item;
+  }));
+}
+
+async function watchJob() {
+  polling = true;
+  while (polling) {
+    const job = await api("/api/job");
+    showJob(job);
+    if (!job.running) break;
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  polling = false;
+  setBusy(false);
+  refreshStatus().catch(() => {});
+}
+
+function setBusy(busy) {
+  document.querySelectorAll("button").forEach(button => {
+    if (!button.closest("nav")) button.disabled = busy;
+  });
+  $("flash").disabled = busy || !firmware;
+  if (!busy) {
+    const only = settings.targets.length === 1;
+    document.querySelectorAll(".remove").forEach(button => button.disabled = only);
+  }
+}
+
+function setFirmware(file) {
+  firmware = file || null;
+  $("drop").textContent = file ? `${file.name} (${(file.size / 1024).toFixed(1)} KiB)`
+    : "Drop an .elf, .hex or .bin file here, or click to browse";
+  $("drop").classList.toggle("has-file", !!file);
+  $("base-row").hidden = !(file && file.name.toLowerCase().endsWith(".bin"));
+  $("flash").disabled = !file;
+}
+
+function showTab(name) {
+  $("page-flash").hidden = name !== "flash";
+  $("page-setup").hidden = name !== "setup";
+  $("tab-flash").classList.toggle("active", name === "flash");
+  $("tab-setup").classList.toggle("active", name === "setup");
+  if (name === "setup") loadPorts();
+}
+
+async function loadPorts() {
+  const ports = await api("/api/ports");
+  const select = $("port");
+  select.replaceChildren(...ports.map(port => new Option(port.label, port.device)));
+  if (!ports.length) select.add(new Option("No USB port found", ""));
+}
+
+$("tab-flash").onclick = () => showTab("flash");
+$("tab-setup").onclick = () => showTab("setup");
+$("ports").onclick = () => loadPorts().catch(error => fail(error.message));
+$("refresh").onclick = () => refreshStatus().catch(error => fail(error.message));
+$("host").onchange = () => saveQuietly().then(refreshStatus);
+$("add").onclick = () => {
+  collect();
+  const used = settings.targets.flatMap(target => [target.swclk, target.swdio]);
+  const free = pins.filter(pin => !used.includes(pin) && pin !== 38);
+  settings.targets.push({name: `Target ${String.fromCharCode(65 + settings.targets.length)}`,
+                         cfg: configs[0] || "stm32f4x.cfg", swclk: free[0], swdio: free[1]});
+  renderTargets();
+  saveQuietly();
+};
+$("find").onclick = async () => {
+  const button = $("find");
+  button.disabled = true;
+  button.textContent = "Searching…";
+  try {
+    const {hosts} = await post("/api/discover");
+    if (!hosts.length) {
+      fail("No board found. Is this computer on the same network as the board?");
+    } else {
+      $("host").value = hosts[0];
+      await saveQuietly();
+      await refreshStatus();
+    }
+  } catch (error) {
+    fail(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Find board";
+  }
+};
+$("file").onchange = event => setFirmware(event.target.files[0]);
+const drop = $("drop");
+["dragenter", "dragover"].forEach(name => drop.addEventListener(name, event => {
+  event.preventDefault();
+  drop.classList.add("over");
+}));
+["dragleave", "drop"].forEach(name => drop.addEventListener(name, event => {
+  event.preventDefault();
+  drop.classList.remove("over");
+}));
+drop.addEventListener("drop", event => setFirmware(event.dataTransfer.files[0]));
+$("flash").onclick = () => run(async () => {
+  await save();
+  const query = new URLSearchParams({target: settings.selected, base: $("base").value});
+  await api(`/api/flash?${query}`, {method: "POST", body: firmware,
+    headers: {"X-Filename": encodeURIComponent(firmware.name)}});
+});
+$("board-browse").onclick = () => $("board-file").click();
+$("board-file").onchange = event => {
+  boardImage = event.target.files[0] || null;
+  if (boardImage) $("board-name").value = boardImage.name;
+};
+$("board-flash").onclick = () => {
+  if (!confirm("Erase this board and write the debugger firmware?")) return;
+  run(() => api(`/api/board/flash?port=${encodeURIComponent($("port").value)}`,
+    {method: "POST", body: boardImage,
+     headers: boardImage ? {"X-Filename": encodeURIComponent(boardImage.name)} : {}}));
+};
+$("wifi").onclick = async () => {
+  try {
+    await post("/api/wifi", {host: $("wifi-host").value.trim(), ssid: $("ssid").value,
+                             password: $("password").value});
+    $("password").value = "";
+    $("progress-box").hidden = false;
+    $("stage").className = "good";
+    $("stage").textContent = "Saved. The board is restarting. Rejoin your network, then use Find board.";
+  } catch (error) {
+    fail(error.message);
+  }
+};
+$("forget").onclick = () => {
+  if (!confirm("Clear the saved Wi-Fi network and target settings on this board?")) return;
+  run(() => api(`/api/board/forget-wifi?port=${encodeURIComponent($("port").value)}`, {method: "POST"}));
+};
+
+(async function start() {
+  const state = await api("/api/state");
+  settings = state.settings;
+  pins = state.pins;
+  configs = [...new Set(settings.targets.map(target => target.cfg))];
+  $("host").value = settings.host;
+  $("board-name").value = state.image || "Choose an image";
+  renderTargets();
+  if (state.job.running) run(async () => {});
+  refreshStatus().catch(error => fail(error.message));
+})();
+</script>
+</body>
+</html>
